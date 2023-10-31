@@ -73,27 +73,7 @@ async function get_user_info(slot) {
     return await login(slot);
 }
 
-const auth = ($) => $.vmatch({
-    login: async ($, username, password) => {
-        alert("log in with username: " + username + " and password: " + password);
-        return {isCook: true};
-    },
-    register: ($) => alert("register NIY"),
-    reset_password: ($) => alert("reset password NIY"),
-});
-
-async function main($) {
-    let user;
-    while (!user) user = await auth($);
-    $.answer(user.isCook ? "cook" : "order");
-    return $.vmatch({
-        cook: async ($, user) => {
-            $.reset(main2);
-        },
-    });
-}
-
-async function main2(layout) {
+async function main(layout) {
 
     const user = await get_user_info(layout);
     if (!user) return;
