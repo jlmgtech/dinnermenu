@@ -1,0 +1,43 @@
+.menu-container {
+    display: flex;
+    justify-content: space-between;
+    /* align items along the top */
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.menu-item {
+    width: 30%;
+    padding: 20px 0;
+    text-align: center;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+img.menu-img {
+    max-width: 80%;
+}
+
+.menu-item-ingredients {
+    width: 80%;
+    margin: auto;
+    text-align: left;
+    color: grey;
+    font-size: 0.8em;
+}
+
+.menu-bar {
+    background: #333;
+    color: #fff;
+}
+
+.avatar {
+    width: 50px;
+    margin-left: auto;
+}
+
+.user-name {
+    display: inline-block;
+    margin-right: 2em;
+}

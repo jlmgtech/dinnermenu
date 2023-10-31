@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>test pocketbase</title>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <script type="importmap">
+        {
+            "imports": {
+                "pocketbase": "https://unpkg.com/pocketbase@0.19.0/dist/pocketbase.es.mjs",
+                "preact": "https://cdnjs.cloudflare.com/ajax/libs/preact/10.18.1/preact.module.min.js",
+                "preact/hooks": "https://cdnjs.cloudflare.com/ajax/libs/preact/10.18.1/hooks.module.min.js",
+                "htm": "https://unpkg.com/htm?module",
+                "html": "/lib/html.js",
+                "slot": "/lib/slot/Slot.js",
+                "slot/utils": "/lib/slot/utils.js"
+            }
+        }
+        </script>
+
+    </head>
+    <body>
+        <div id='app'></div>
+        <script type='module' src='./src/main.js'></script>
+        <link rel='stylesheet' type='text/css' href='./src/styles.css' />
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    </body>
+</html>
