@@ -5,180 +5,223 @@ import html from "html";
 import { delay, Store } from "slot/utils";
 const pb = new PocketBase('http://127.0.0.1:8090');
 window.pb = pb;
-pb.collection('posts').subscribe('*', (...args) => { console.log('posts', args); });
 
-render(html`<${Slot} flow=${main} />`, document.getElementById("app"));
+const Auth = {};
+const Ordering = {};
+let main;
+let cook;
+let guest;
 
-async function mainLayout(layout, user) {
-    const content = new Stamp();
-    layout.show(() => html `
-        <div class="menu-bar">
-            <div class="container">
-                <div class="row">
-                    <div class="col-md-12">
-                        <div style="text-align:right">
-                            <span class="user-name">${user.record.name}</span>
-                            <img class="avatar" src=${getAvatar(user)} onClick=${() => layout.answer("logout")} />
+window.addEventListener("load", () => {
+    render(html`<${Slot} flow=${main} />`, document.getElementById("app"));
+});
+
+main = ($) => 
+    refreshAuth().then(user =>
+    user 
+    ? (console.log("user authd", user ), (user.isCook ? cook($) : Ordering.list($)))
+    : (console.log("user not authd", user), Auth.auth($).then(user => 
+        user
+        ? (user.isCook ? cook($) : Ordering.list($))
+        : main($)
+    ))
+);
+
+Auth.auth = ($) => $.vmatch("log in", {
+    signin: ($, usr, pwd) => attempt_signin($, usr, pwd),
+    signup: ($) => Auth.signup($),
+    reset: ($) => Auth.reset($),
+});
+Auth.signup = async ($) => $.vmatch("signup", {
+    done: ($, name, email, password, password_confirm) => (createUser($, name, email, password, password_confirm)) ? null : signup($),
+    cancel: () => null,
+});
+Auth.reset = async ($) => (await $.capture(() => html `
+    <div> cannot reset your password at this time, because email provider has not been set up for this service. </div>
+    <div> please contact your administrator for assistance. </div>
+    <button class="btn btn-primary" onClick=${$.answer}>ok</button>
+`)) && null;
+
+Ordering.list = ($) => show_items($).then(() => 
+    $.match({
+        add: ($, dish) => Ordering.add($, dish).then(() => $.reset(Ordering.list)),
+        edit: ($, dish) => Ordering.edit($, dish).then(() => $.reset(Ordering.list)),
+        // delete from ticket_contents where dish = dish.id limit 1:
+        delete: async ($, dish) => {
+            const content = await pb.collection("ticket_contents").getList(0, 1, {
+                filter: `dish = '${dish.id}'`,
+            });
+            if (content.items.length) {
+                await pb.collection("ticket_contents").delete(content.items[0].id);
+            }
+            $.reset(Ordering.list);
+        },
+        submit: ($) => Ordering.thankyou($),
+        cancel: ($) => Ordering.cancel($) ? null : Ordering.list($),
+    })
+);
+
+Ordering.thankyou = async ($) => {
+    $.show("submitting order");
+    //const ticket = await get_or_create_ticket();
+    return await $.vmatch("thank you!", {
+        edit_order: ($) => Ordering.list($),
+        logout: ($) => {
+            pb.authStore.clear();
+            $.reset(main);
+        },
+    });
+};
+
+async function get_or_create_ticket() {
+    let tickets = await pb.collection("tickets").getList(0, 1, {
+        sort: "-created",
+    });
+    if (tickets.items.length) {
+        return tickets.items[0];
+    }
+    return await pb.collection("tickets").create({
+        status: "active",
+        user: pb.authStore.model.id,
+    });
+}
+
+Ordering.add = async ($, dish) => {
+    $.show("please wait");
+    // get latest ticket that is active,
+    // if none, then make a new ticket:
+    let ticket = await get_or_create_ticket();
+
+    // add dish to ticket:
+    await pb.collection("ticket_contents").create({
+        ticket: ticket.id,
+        dish: dish.id,
+    });
+};
+
+
+async function show_items($) {
+    // for each dish, show the name, price, and a button to add to cart
+    $.show("loading menu");
+    const dishes = await pb.collection("dishes").getList(0, 100);
+
+    $.show("loading your order");
+
+    // get contents of latest active ticket:
+    const ticket_contents = await pb.collection("tickets").getList(0, 100, {
+        sort: "-created",
+        expand: "ticket_contents(ticket).dish",
+    });
+    const ticket = ticket_contents.items
+        .map(ticket => (ticket?.expand ?? {})["ticket_contents(ticket)"] ?? [])
+        .map(content => content.map(item => item.expand.dish))
+        .flat();
+
+    $.show(() => html `
+        <div>
+            <h4>menu</h4>
+                ${dishes.items.map(dish => html `
+                    <div class="row">
+                        <div class="col-md-4">${dish.name}</div>
+                        <div class="col-md-4">$${dish.price}</div>
+                        <div class="col-md-4">
+                            <button class="btn btn-primary" onClick=${() => $.answer("add", dish)}>
+                                add
+                            </button>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-        <div class="container">
-            <div class="row">
-                <div class="col-md-12">
-                    <div>${content.stamp()}</div>
-                </div>
-            </div>
-        </div>
-    `);
-
-    layout.expect("logout").then(() => {
-        const proceed = confirm("Are you sure you want to logout?");
-        if (proceed) {
-            pb.authStore.clear();
-            layout.show("logging out...");
-            delay(1000).then(() => {
-                location.reload();
-            });
-        }
-    });
-
-    return await content.slot();
-}
-
-function getAvatar(user) {
-    const token = user.record.id;
-    return `http://127.0.0.1:8090/api/files/_pb_users_auth_/${token}/${user.record.avatar}`;
-}
-
-function getItemImage(food) {
-    const collection_id_or_name = food.collectionId;
-    const record_id = food.id;
-    return `http://127.0.0.1:8090/api/files/${collection_id_or_name}/${record_id}/${food.images[0]}`;
-}
-
-async function cook(slot, user) {
-    slot.show(() => html `
-        <div> Waiting for orders to be placed... </div>
-    `);
-    await slot.capture();
-}
-
-async function get_user_info(slot) {
-    // first, try to get it from localStorage
-    //const user = pb.authStore;
-    //console.log("authstore: ", user);
-    //if (user) return user;
-    return await login(slot);
-}
-
-async function main(layout) {
-
-    const user = await get_user_info(layout);
-    if (!user) return;
-
-    const slot = await mainLayout(layout, user);
-
-    if (user.record.isCook) {
-
-        await cook(slot, user);
-
-    } else {
-
-        const order = await menu(slot);
-
-        slot.show(() => html `
-            <div>
-                <div>Your order is being processed.</div>
-                <div>
-                    Your '${order.name}' will be ready in about
-                    ${" "} ${order.time} minutes.
-                </div>
-            </div>
-        `);
-
-        await slot.capture();
-
-    }
-}
-
-async function menu(slot) {
-    const {items} = await pb.collection("item").getList(1, 10);
-    console.log("items: ", items[0]);
-    slot.show(() => html `
-        <div>
-            <br />
-            <div class="text-center">Choose an entree for dinner:</div>
-            <br />
-            <div class="menu-container">
-                ${items.map(food => html`
-                    <div key=${food.id} class="menu-item">
-                        <div>${food.name} $${food.price}</div>
-                        <hr />
-                        <div><img class="menu-img" src=${getItemImage(food)} /></div>
-                        <div>${food.time} minutes</div>
-                        <div class="menu-item-ingredients">ingredients: ${food.ingredients}</div>
-                        <br />
-                        <button class="btn btn-primary" onClick=${() => slot.answer("order", food)}>order $${food.price}</button>
-                    </div>
                 `)}
-            </div>
+            <hr />
         </div>
-    `);
-    const [_, item] = await slot.expect("order");
-    return item;
-}
 
-async function login(slot) {
-    // render the login menu
-    const username = new Store("jim");
-    const password = new Store("asdfasdf");
-    slot.show(() => html `
-        <!-- center this horizontally -->
-
-        <div class="container">
+        <div>
+            <h4>your order ($${ticket.reduce((a, b) => a + b.price, 0)})</h4>
+            <hr />
+            ${ticket.map(dish => html `
+                <div class="row">
+                    <div class="col-md-4">${dish.name}</div>
+                    <div class="col-md-4">$${dish.price}</div>
+                    <div class="col-md-4">
+                        <button class="btn btn-primary" onClick=${() => $.answer("edit", dish)}>
+                            edit
+                        </button>
+                        <button class="btn btn-warning" onClick=${() => $.answer("delete", dish)}>
+                            delete
+                        </button>
+                    </div>
+                </div>
+            `)}
+            <hr />
+            <div class="text-center">
+                <button class="btn btn-primary" onClick=${() => $.answer("submit")}>Submit Order</button>
+            </div>
             <div>
                 <br /><br />
             </div>
-            <div class="row">
-                <div class="col-md-12 text-center">
-                    <h1>login</h1>
-                </div>
-            </div>
-            <div><br /></div>
-            <div class="row">
-                <div class="col-md-12">
-                    <input class="form-control" type="text" placeholder="username" value=${username} onInput=${username.bind} /><br />
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-md-12">
-                    <input class="form-control" type="password" placeholder="password" value=${password} onInput=${password.bind} /><br />
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-md-12 text-center">
-                    <button class="btn btn-primary" onClick=${() => slot.answer()} >login</button>
-                </div>
-            </div>
         </div>
     `);
+}
 
-    await slot.capture();
-    slot.show(() => html `<div style='text-align:center'>loading</div>`);
+
+async function createUser($, name, email, password, password_confirm) {
+    $.show("creating user");
+    if (password !== password_confirm) {
+        await $.capture(() => html `
+            <div>passwords do not match</div>
+            <button class="btn btn-primary" onClick=${$.answer}>ok</button>
+        `);
+        return false;
+    }
     try {
-        const user = await pb.collection('users').authWithPassword(username.get(), password.get());
-        slot.show(() => html `<div style='text-align:center'>login success</div>`);
-        await delay(250);
-        if (user) {
-            console.log("saving user: ", user);
-            pb.authStore.save(user.token, user.record);
-        }
-        return user;
-    } catch (e) {
-        slot.show("login failed");
+        await pb.collection("users").create({
+            name: name,
+            email: email,
+            password: password,
+            passwordConfirm: password_confirm,
+            isCook: false,
+        });
+        $.show("user created");
         await delay(1000);
-        return null;
+        return true;
+    } catch (e) {
+        if (e.status === 400) {
+            await $.capture(() => html `
+                <div>there was an issue creating a new user with the details you provided.</div>
+                <div>Please ensure that the password, username, and email are valid.</div>
+                <button class="btn btn-primary" onClick=${$.answer}>ok</button>
+            `);
+            return false;
+        } else {
+            throw e;
+        }
+    }
+}
+
+async function attempt_signin($, username, password) {
+    $.show("logging in");
+    try {
+        return await pb.collection("users").authWithPassword(username, password);
+    } catch (e) {
+        if (e.status === 400) {
+            await $.capture(() => html `
+                <div>invalid username or password</div>
+                <button class="btn btn-primary" onClick=${$.answer}>ok</button>
+            `);
+            return null;
+        } else {
+            throw e;
+        }
+    }
+}
+async function refreshAuth() {
+    try {
+        return await pb.collection("users").authRefresh();
+    } catch (e) {
+        console.error(e);
+        if (e.status === 401) {
+            return null;
+        } else {
+            throw e;
+        }
     }
 }

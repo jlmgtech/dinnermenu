@@ -38,7 +38,7 @@ export default function SignalSlot(classDef) {
             this.parent?.answer(...args);
         };
 
-        this.vmatch = async handlers => {
+        this.vmatch = async (title, handlers) => {
             // the idea is to automatically create a view based on the match params
             const output = [];
             for (const [op, handler] of Object.entries(handlers)) {
@@ -75,6 +75,7 @@ export default function SignalSlot(classDef) {
             }
             this.show(() => html `
                 <div class="container">
+                    <h3>${title}</h3>
                     ${output}
                 </div>
             `);
